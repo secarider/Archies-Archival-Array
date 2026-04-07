@@ -273,6 +273,156 @@ archie_twist_configure() {
 }
 # -------/\----------- TWISTED-LITE END ------/\------------
 
+# ------------------ ARCHIE EASTER EGG ------------------
+# ========================================================
+# #MARKER: ARCHIE EASTER EGG (MASCOT DISPLAY ENGINE)
+# ========================================================
+# PURPOSE:
+# - Provide a fun visual break during long archival runs
+# - Trigger only on large batches (default: 50+ files)
+# - Display external ASCII art if available
+# - Fall back to a small built-in mascot if not
+#
+# DESIGN RULES:
+# - NEVER interfere with encoding process
+# - ONLY trigger between files (safe display window)
+# - Keep runtime delay short and controlled
+#
+# CONFIG:
+# - Enabled by default (can be disabled easily)
+# - Trigger every N completed files
+#
+# NOTE:
+# - External file allows customization (logo, mascot, etc.)
+# - No dependency on external tools beyond cat
+# ========================================================
+
+ARCHIE_EGG_ENABLE=1
+ARCHIE_EGG_MIN_FILES=50
+ARCHIE_EGG_EVERY_N_FILES=10
+ARCHIE_EGG_FILE="ARCHIE_ASCII.txt"
+
+# ----- DISPLAY EASTER EGG -------------------------------
+archie_show_easter_egg() {
+    (( ARCHIE_EGG_ENABLE == 1 )) || return 0
+
+    # Only trigger on sufficiently large batches
+    (( ARCHIE_PROGRESS_TOTAL_FILES >= ARCHIE_EGG_MIN_FILES )) || return 0
+
+    # Only trigger at defined interval
+    if ! (( ARCHIE_PROGRESS_DONE_COUNT > 0 )) || \
+       ! (( ARCHIE_PROGRESS_DONE_COUNT % ARCHIE_EGG_EVERY_N_FILES == 0 )); then
+        return 0
+    fi
+
+    echo
+
+    # ----------------------------------------------------
+    # EXTERNAL ASCII (USER CUSTOMIZABLE)
+    # ----------------------------------------------------
+    if [[ -f "$ARCHIE_EGG_FILE" ]]; then
+        echo -e "${CYAN} = = > Displaying Custom ASCII:${NC} ${YELLOW}$ARCHIE_EGG_FILE${NC}"
+        echo
+        archie_play_ascii_scroll "$ARCHIE_EGG_FILE" 2 0.015 0.30
+
+    else
+        # ------------------------------------------------
+        # BUILT-IN FALLBACK (SMALL BODY CAT / SCROLL REVEAL)
+        # ------------------------------------------------
+        echo -e "${CYAN} = = > Built-in Mascot:${NC}"
+        echo
+        archie_play_builtin_cat_scroll 2 0.025 0.30
+    fi
+
+    echo
+    return 0
+}
+
+# =========================
+# #MARKER: BUILT-IN CAT SCROLL PLAYER
+# =========================
+# PURPOSE:
+# - Provide A Hardcoded Fallback Mascot When No External ASCII File Exists
+# - Use The Same Old-School Line-By-Line Reveal Effect
+# - Keep The Body Small / Proportional / Readable
+#
+# DESIGN:
+# - Short Burst Only
+# - No Infinite Loop
+# - Safe Between-File Intermission Only
+# =========================
+archie_play_builtin_cat_scroll() {
+    local passes="${1:-2}"
+    local line_delay="${2:-0.025}"
+    local hold_delay="${3:-0.30}"
+    local pass
+    local -a art=(
+        "   /\\_/\\\\"
+        "  ( ^.^ )"
+        "  /|_|\\\\"
+        "   / \\\\"
+    )
+
+    for (( pass=1; pass<=passes; pass++ )); do
+        printf "\033[2J\033[H"
+
+        echo -e "${MAGENTA}================================================${NC}"
+        echo -e "${MAGENTA}              ARCHIE INTERMISSION               ${NC}"
+        echo -e "${MAGENTA}================================================${NC}"
+        echo
+
+        local line
+        for line in "${art[@]}"; do
+            printf '%s\n' "$line"
+            sleep "$line_delay"
+        done
+
+        echo
+        sleep "$hold_delay"
+    done
+
+    return 0
+}
+
+# =========================
+# #MARKER: ASCII SCROLL PLAYER
+# =========================
+# PURPOSE:
+# - Read An ASCII Art File Line-By-Line Very Fast
+# - Create A Retro "Screen Reveal" / "Scrolling In" Effect
+# - Short Burst Only, Then Return To ARCHIE
+# =========================
+archie_play_ascii_scroll() {
+    local art_file="$1"
+    local passes="${2:-2}"
+    local line_delay="${3:-0.02}"
+    local hold_delay="${4:-0.35}"
+    local pass
+
+    [[ -f "$art_file" ]] || return 1
+
+    for (( pass=1; pass<=passes; pass++ )); do
+        printf "\033[2J\033[H"
+
+        echo -e "${MAGENTA}================================================${NC}"
+        echo -e "${MAGENTA}              ARCHIE INTERMISSION               ${NC}"
+        echo -e "${MAGENTA}================================================${NC}"
+        echo
+
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            printf '%s\n' "$line"
+            sleep "$line_delay"
+        done < "$art_file"
+
+        echo
+        sleep "$hold_delay"
+    done
+
+    return 0
+}
+
+# -------/\----------- EASTER EGG END ------/\------------
+
 # -----------\/------- HELPERS -----\/-------------
 pause() {
     echo -e "${GR}>->->->-> = = > Review Above Carefully.....${NC}"
@@ -1348,6 +1498,10 @@ run_archie() {
                 archie_twist_cycle
             fi
         fi
+        # ========================================================
+        # ARCHIE EASTER EGG INTERMISSION
+        # ========================================================
+        archie_show_easter_egg
         echo
     done
 

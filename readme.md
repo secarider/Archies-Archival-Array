@@ -1,4 +1,4 @@
-![Archies-Archival-Array_Logo](Archie.png)
+![Archies-Archival-Array_Logo](archie.png)
 Archies-Archival-Array
 ARCHIE.sh — Standalone Archival Reduction Tool
 Overview

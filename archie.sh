@@ -60,6 +60,32 @@ ARCHIE_SEQUENCE_PAD=4
 ARCHIE_NO_GAIN_MODE="dump"
 ARCHIE_SIZE_TOLERANCE_PERCENT=0
 
+# ========================================================
+# #MARKER: FILENAME SHORTENING DEFAULTS
+# ========================================================
+# PURPOSE:
+# - Keep ARCHIE output names short enough to stay readable
+# - Preserve meaningful front-of-name intent when it exists
+# - Continue collapsing long zero-padded camera junk safely
+#
+# DESIGN RULE:
+# - ONE shared helper must decide the shortened stem
+# - Output generation and resume matching must use that same helper
+#
+# DEFAULT BEHAVIOR:
+# - Enabled by default
+# - Preserve a small meaningful prefix when present
+# - Preserve a tail slice for recognition / matching
+#
+# DISABLE OPTIONS:
+# - Set ENABLE to 0 to fully disable shortening
+# - Large keep values can also make shortening effectively disappear
+#   for ordinary filenames, but explicit disable is cleaner / preferred
+# ========================================================
+ARCHIE_NAME_SHORTEN_ENABLE=1
+ARCHIE_NAME_SHORTEN_KEEP_PREFIX=2
+ARCHIE_NAME_SHORTEN_KEEP_TAIL=12
+
 ARCHIE_META_DIR="ARCHIE_META"
 ARCHIE_LEDGER="ARCHIE_LEDGER.csv"
 
@@ -158,42 +184,42 @@ archie_palette_apply_by_name() {
     local name="${1,,}"
 
     case "$name" in
-        classic)
+        classic) #this one looks like oem so whay does it need a preset
             archie_apply_palette \
                 $'\033[1;31m' $'\033[1;32m' $'\033[1;33m' $'\033[1;34m' \
                 $'\033[1;35m' $'\033[1;36m' $'\033[1;37m' $'\033[1;97m'
             ;;
-        christmas)
+        christmas) # fixed: proper red + green palette (no yellow)
             archie_apply_palette \
-                $'\033[1;31m' $'\033[1;32m' $'\033[1;33m' $'\033[1;32m' \
+                $'\033[1;31m' $'\033[1;32m' $'\033[1;32m' $'\033[1;31m' \
                 $'\033[1;31m' $'\033[1;32m' $'\033[1;37m' $'\033[1;97m'
             ;;
-        contrast)
+        contrast) # fixed: intentionally harsh / high-contrast palette
             archie_apply_palette \
-                $'\033[1;31m' $'\033[1;32m' $'\033[1;33m' $'\033[1;34m' \
-                $'\033[1;35m' $'\033[1;36m' $'\033[1;97m' $'\033[1;97m'
+                $'\033[1;91m' $'\033[0;32m' $'\033[1;93m' $'\033[0;34m' \
+                $'\033[1;95m' $'\033[0;36m' $'\033[1;97m' $'\033[0;90m'
             ;;
-        muted)
+        muted) #this one looks good and dim
             archie_apply_palette \
                 $'\033[0;31m' $'\033[0;32m' $'\033[0;33m' $'\033[0;34m' \
                 $'\033[0;35m' $'\033[0;36m' $'\033[0;37m' $'\033[1;37m'
             ;;
-        ice)
+        ice) # reworked: cold, sharp, high-contrast "frozen" palette
             archie_apply_palette \
-                $'\033[1;34m' $'\033[1;36m' $'\033[1;37m' $'\033[1;34m' \
-                $'\033[1;35m' $'\033[1;36m' $'\033[1;37m' $'\033[1;97m'
+                $'\033[1;96m' $'\033[0;36m' $'\033[1;97m' $'\033[0;34m' \
+                $'\033[1;94m' $'\033[1;96m' $'\033[1;97m' $'\033[0;37m'
             ;;
-        danger)
+        danger) #this one looks good
             archie_apply_palette \
                 $'\033[1;91m' $'\033[1;31m' $'\033[1;93m' $'\033[1;35m' \
                 $'\033[1;95m' $'\033[1;33m' $'\033[1;37m' $'\033[1;97m'
             ;;
-        mono)
+        mono) #this one looks good
             archie_apply_palette \
                 $'\033[0;37m' $'\033[1;37m' $'\033[0;37m' $'\033[0;90m' \
                 $'\033[0;37m' $'\033[1;37m' $'\033[0;37m' $'\033[1;37m'
             ;;
-        twisted)
+        twisted) #this one looks good
             archie_apply_palette \
                 $'\033[1;36m' $'\033[1;35m' $'\033[1;31m' $'\033[1;33m' \
                 $'\033[1;32m' $'\033[1;94m' $'\033[1;97m' $'\033[1;93m'
@@ -236,8 +262,9 @@ archie_twist_configure() {
     echo -e "${CYAN}     3) Random Palette Cycle${NC}"
     echo
 
-    read -r -p " = = > Select [1-3 | Enter=off]: " mode_input
-    mode_input="${mode_input//[[:space:]]/}"
+	echo -e "${YELLOW} = = > Select [1-3 | Enter=off] (Default: off): ${NC}"
+	read -r mode_input
+	mode_input="${mode_input//[[:space:]]/}"
 
     case "$mode_input" in
         2)
@@ -351,19 +378,69 @@ archie_show_easter_egg() {
 # - No Infinite Loop
 # - Safe Between-File Intermission Only
 # =========================
+# =========================
+# #MARKER: BUILT-IN CAT (ANIMATED INTERMISSION v2)
+# =========================
+# PURPOSE:
+# - Larger, more expressive fallback mascot
+# - Two-frame flip animation (tail wag / body shift)
+# - No external file required
+#
+# DESIGN:
+# - Fills more vertical space
+# - Clean silhouette (no visual noise)
+# - Fast flip = illusion of motion
+# =========================
 archie_play_builtin_cat_scroll() {
-    local passes="${1:-2}"
-    local line_delay="${2:-0.025}"
-    local hold_delay="${3:-0.30}"
-    local pass
-    local -a art=(
-        "   /\\_/\\\\"
-        "  ( ^.^ )"
-        "  /|_|\\\\"
-        "   / \\\\"
+    local passes="${1:-4}"
+    local frame_delay="${2:-0.18}"
+
+    local -a frame1=(
+""
+"              /\\_/\\"
+"             / o o \\"
+"            (   \"   )"
+"             \\~(*)~/"
+"              - ^ -"
+""
+"        /|\\            /|\\"
+"       / | \\__________/ | \\"
+"      /  |              |  \\"
+"         |              |"
+"         |              |"
+"         |              |"
+"         |              |"
+"        /                \\"
+"       /   /\\      /\\     \\"
+"      /___/  \\____/  \\_____\\"
+""
+"                 ~~~"
     )
 
-    for (( pass=1; pass<=passes; pass++ )); do
+    local -a frame2=(
+""
+"              /\\_/\\"
+"             / o o \\"
+"            (   \"   )"
+"             \\~(*)~/"
+"              - ^ -"
+""
+"        /|\\            /|\\"
+"       / | \\__________/ | \\"
+"      /  |              |  \\"
+"         |              |"
+"         |              |"
+"         |              |"
+"         |              |"
+"        /                \\"
+"       /   /\\      /\\     \\"
+"      /___/  \\____/  \\_____\\"
+""
+"               ~~~"
+    )
+
+    local i
+    for (( i=0; i<passes; i++ )); do
         printf "\033[2J\033[H"
 
         echo -e "${MAGENTA}================================================${NC}"
@@ -371,14 +448,17 @@ archie_play_builtin_cat_scroll() {
         echo -e "${MAGENTA}================================================${NC}"
         echo
 
-        local line
-        for line in "${art[@]}"; do
-            printf '%s\n' "$line"
-            sleep "$line_delay"
-        done
+        printf '%s\n' "${frame1[@]}"
+        sleep "$frame_delay"
 
+        printf "\033[2J\033[H"
+        echo -e "${MAGENTA}================================================${NC}"
+        echo -e "${MAGENTA}              ARCHIE INTERMISSION               ${NC}"
+        echo -e "${MAGENTA}================================================${NC}"
         echo
-        sleep "$hold_delay"
+
+        printf '%s\n' "${frame2[@]}"
+        sleep "$frame_delay"
     done
 
     return 0
@@ -491,6 +571,128 @@ archie_trim_name() {
     else
         printf '...%s\n' "${name: -$max_len}"
     fi
+}
+
+# ========================================================
+# #MARKER: SMART FILENAME SHORTEN HELPER
+# ========================================================
+# PURPOSE:
+# - Provide ONE authoritative shortening rule for long filename stems
+# - Preserve meaningful front intent when it exists
+# - Keep zero-padded camera junk in the old tail-only style
+#
+# WHY THIS EXISTS:
+# - ARCHIE currently had different tail lengths in different places
+# - That breaks coherence between:
+#     output naming
+#     existing-output detection
+#     existing-output lookup
+#
+# RULES:
+# - If shortening is disabled:
+#     return full stem unchanged
+# - If stem is already short enough:
+#     return full stem unchanged
+# - If the front slice is only zeros:
+#     treat it as numeric padding / noise
+#     return tail only
+# - Otherwise:
+#     preserve prefix + "_" + tail
+#
+# IMPORTANT:
+# - We intentionally avoid heavy parsing / tokenization
+# - We intentionally keep this simple and fast
+# - This helper must be the ONLY place that decides shortened stems
+# ========================================================
+archie_get_shortened_stem() {
+    local stem="$1"
+    local keep_prefix="${2:-$ARCHIE_NAME_SHORTEN_KEEP_PREFIX}"
+    local keep_tail="${3:-$ARCHIE_NAME_SHORTEN_KEEP_TAIL}"
+
+    local stem_len
+    local prefix_part=""
+    local tail_part=""
+
+    stem_len="${#stem}"
+
+    # ----------------------------------------------------
+    # GLOBAL DISABLE
+    # ----------------------------------------------------
+    # PURPOSE:
+    # - Allow ARCHIE to preserve full human-readable filenames
+    #   during runs where shortening is not wanted
+    # ----------------------------------------------------
+    if (( ARCHIE_NAME_SHORTEN_ENABLE == 0 )); then
+        printf '%s\n' "$stem"
+        return 0
+    fi
+
+    # ----------------------------------------------------
+    # SANITY CLAMPS
+    # ----------------------------------------------------
+    # PURPOSE:
+    # - Prevent weird negative / empty slicing behavior
+    # - Keep helper predictable even if vars are set badly
+    # ----------------------------------------------------
+    (( keep_prefix < 0 )) && keep_prefix=0
+    (( keep_tail   < 1 )) && keep_tail=1
+
+    # ----------------------------------------------------
+    # SHORT STEMS STAY WHOLE
+    # ----------------------------------------------------
+    # RULE:
+    # - If the name already fits inside the requested tail window,
+    #   do not mutilate it just because shortening is enabled
+    # ----------------------------------------------------
+    if (( stem_len <= keep_tail )); then
+        printf '%s\n' "$stem"
+        return 0
+    fi
+
+    tail_part="${stem: -keep_tail}"
+
+    # ----------------------------------------------------
+    # OPTIONAL PREFIX PRESERVATION
+    # ----------------------------------------------------
+    # RULE:
+    # - Prefix preservation only matters if user requested it
+    # - If prefix length is zero, this becomes classic tail-only mode
+    # ----------------------------------------------------
+    if (( keep_prefix > 0 )); then
+        if (( stem_len <= keep_prefix )); then
+            prefix_part="$stem"
+        else
+            prefix_part="${stem:0:keep_prefix}"
+        fi
+    fi
+
+    # ----------------------------------------------------
+    # ZERO-PADDED FRONT = NOISE
+    # ----------------------------------------------------
+    # PURPOSE:
+    # - Preserve current expected behavior for long camera dump names
+    # - If the preserved front slice is only zeros, do NOT keep it
+    #
+    # EXAMPLES:
+    # - 000000000123456789  -> tail only
+    # - a1_000000001234567  -> keep a1 + tail
+    # ----------------------------------------------------
+    if [[ -z "$prefix_part" || "$prefix_part" =~ ^0+$ ]]; then
+        printf '%s\n' "$tail_part"
+        return 0
+    fi
+
+    # ----------------------------------------------------
+    # MEANINGFUL PREFIX PRESENT
+    # ----------------------------------------------------
+    # OUTPUT:
+    # - prefix_tail
+    #
+    # NOTE:
+    # - We intentionally keep this simple
+    # - No token parsing / delimiter analysis / dedupe tricks here
+    # ----------------------------------------------------
+    printf '%s_%s\n' "$prefix_part" "$tail_part"
 }
 
 run_with_progress() {
@@ -607,19 +809,21 @@ run_with_progress() {
 archie_existing_output_for_source() {
     local prefix="$1"
     local src="$2"
-    local base stem tail
+    local base stem short_stem
 
     base="$(basename "$src")"
     stem="${base%.*}"
 
-    if (( ${#stem} > 18 )); then
-        tail="${stem: -18}"
-    else
-        tail="$stem"
-    fi
+    # ----------------------------------------------------
+    # IMPORTANT:
+    # - Resume-safe matching MUST use the same shortening rule
+    #   as output generation
+    # - We no longer invent local tail logic here
+    # ----------------------------------------------------
+    short_stem="$(archie_get_shortened_stem "$stem")"
 
-    # Look for any matching output with this prefix + tail
-    compgen -G "${prefix}*_${tail}.mkv" > /dev/null 2>&1
+    # Look for any matching output with this prefix + shortened stem
+    compgen -G "${prefix}*_${short_stem}.mkv" > /dev/null 2>&1
 }
 
 # ========================================================
@@ -643,20 +847,21 @@ archie_existing_output_for_source() {
 archie_get_existing_output_for_source() {
     local prefix="$1"
     local src="$2"
-    local base stem tail
+    local base stem short_stem
     local -a matches=()
 
     base="$(basename "$src")"
     stem="${base%.*}"
 
-    if (( ${#stem} > 18 )); then
-        tail="${stem: -18}"
-    else
-        tail="$stem"
-    fi
+    # ----------------------------------------------------
+    # IMPORTANT:
+    # - Existing-output lookup must use the exact same shortened
+    #   stem that output generation and match detection use
+    # ----------------------------------------------------
+    short_stem="$(archie_get_shortened_stem "$stem")"
 
     shopt -s nullglob
-    matches=( "${prefix}"*_"${tail}".mkv )
+    matches=( "${prefix}"*_"${short_stem}".mkv )
     shopt -u nullglob
 
     if (( ${#matches[@]} > 0 )); then
@@ -780,7 +985,7 @@ show_space_overview() {
 # ------------------ DISCOVERY / LISTING ------------------
 archie_collect_targets() {
     shopt -s nullglob nocaseglob
-    local -a vids=(*.{mkv,mp4,avi,mov,mpg,mpeg,ts,m4v,ogv,flv,3gp,divx,webm,wmv,xvid})
+    local -a vids=(*.{LRV,mkv,mp4,avi,mov,mpg,mpeg,ts,m4v,ogv,flv,3gp,divx,webm,wmv,xvid})
     shopt -u nullglob nocaseglob
 
     local f
@@ -807,19 +1012,21 @@ archie_make_output_name() {
     local prefix="$1"
     local seq="$2"
     local src="$3"
-    local base stem tail seq_pad
+    local base stem short_stem seq_pad
 
     base="$(basename "$src")"
     stem="${base%.*}"
 
-    if (( ${#stem} > 18 )); then # this 18 is how many digit from .extension counting left into the filename we keep 
-        tail="${stem: -18}"
-    else
-        tail="$stem"
-    fi
+    # ----------------------------------------------------
+    # IMPORTANT:
+    # - Output generation now uses the same shared shortening helper
+    #   as resume detection / lookup
+    # - This keeps ARCHIE naming and resume behavior unified
+    # ----------------------------------------------------
+    short_stem="$(archie_get_shortened_stem "$stem")"
 
     printf -v seq_pad "%0${ARCHIE_SEQUENCE_PAD}d" "$seq"
-    printf '%s%s_%s.mkv\n' "$prefix" "$seq_pad" "$tail"
+    printf '%s%s_%s.mkv\n' "$prefix" "$seq_pad" "$short_stem"
 }
 
 archie_limit_targets_interactive() {
@@ -836,8 +1043,9 @@ archie_limit_targets_interactive() {
     echo -e "${CYAN}     0.) Return / Cancel${NC}"
     echo
 
-    read -r -p " = = > Select option [1-2 | 0.=cancel]: " mode
-    mode="${mode//[[:space:]]/}"
+	echo -e "${YELLOW} = = > Select option [1-2 | 0.=cancel] (Default: Full Batch): ${NC}"
+	read -r mode
+	mode="${mode//[[:space:]]/}"
 
     if is_archie_exit_token "$mode" || [[ "$mode" == "0" ]]; then
         return 1
@@ -993,7 +1201,7 @@ archie_get_prefix_for_level() {
 
 archie_pick_audio_mode() {
     local mode
-
+archie_play_builtin_cat_scroll
     clear
     echo -e "${CYAN}================================================${NC}"
     echo -e "${CYAN}              ARCHIE AUDIO POLICY               ${NC}"
@@ -1004,12 +1212,11 @@ archie_pick_audio_mode() {
     echo -e "${CYAN}     2) aac    = Re-encode audio to AAC${NC}"
     echo -e "${CYAN}     3) strip  = Remove audio entirely${NC}"
     echo
-    echo -e "${YELLOW} = = > Default:${NC} ${GREEN}${ARCHIE_DEFAULT_AUDIO_MODE}${NC}"
+    echo -e "${CYAN} = = > 1) Keep Audio 2) Audio to AAC 3) Remove Audio Entirely ${NC}"
     echo
-    echo -e "${CYAN}1 Keep audio 2 audio to AAC 3 Remove audio entirely ${NC}"
-
-    read -r -p " = = > Choose Audio Mode [1-3 | 0.=cancel | q]: " mode
-    mode="${mode//[[:space:]]/}"
+	echo -e "${YELLOW} = = > Choose Audio Mode [1-3 | 0.=cancel | q] (Default: ${GREEN}${ARCHIE_DEFAULT_AUDIO_MODE}${YELLOW}): ${NC}"
+	read -r mode
+	mode="${mode//[[:space:]]/}"
 
     if is_archie_exit_token "$mode"; then
         return 1
@@ -1027,22 +1234,22 @@ archie_pick_audio_mode() {
 
 archie_pick_metadata_mode() {
     local mode
-
+archie_play_builtin_cat_scroll
     clear
     echo -e "${CYAN}================================================${NC}"
     echo -e "${CYAN}            ARCHIE METADATA POLICY              ${NC}"
     echo -e "${CYAN}================================================${NC}"
     echo
     echo -e "${CYAN} = = > Metadata Modes:${NC}"
-    echo -e "${CYAN}     1) sidecar_strip = Save metadata for us, strip output metadata${NC}"
-    echo -e "${CYAN}     2) restore_common = Save sidecars, keep common tags on output${NC}"
-    echo -e "${CYAN}     3) minimal_skip  = Skip metadata capture${NC}"
+    echo -e "${CYAN}     1) Sidecar_Strip = Save metadata for us, strip output metadata${NC}"
+    echo -e "${CYAN}     2) Restore_Common = Save sidecars, keep common tags on output${NC}"
+    echo -e "${CYAN}     3) Minimal_Skip  = Skip metadata capture${NC}"
     echo
-    echo -e "${YELLOW} = = > Default:${NC} ${GREEN}${ARCHIE_DEFAULT_METADATA_MODE}${NC}"
+    echo -e "${CYAN} = = > 1) Sidecar_Strip 2) Restore_Common 3) Minimal_Skip ${NC}"
     echo
-
-    read -r -p " = = > Choose Metadata Mode [1-3 | 0.=cancel | q]: " mode
-    mode="${mode//[[:space:]]/}"
+	echo -e "${YELLOW} = = > Choose Metadata Mode [1-3 | 0.=cancel | q] (Default: ${GREEN}${ARCHIE_DEFAULT_METADATA_MODE}${YELLOW}): ${NC}"
+	read -r mode
+	mode="${mode//[[:space:]]/}"
 
     if is_archie_exit_token "$mode"; then
         return 1
@@ -1233,6 +1440,7 @@ run_archie() {
     echo -e "${YELLOW} = = > Originals remain untouched unless you explicitly delete them later.${NC}"
     echo -e "${YELLOW} = = > Outputs that fail to shrink will be discarded automatically.${NC}"
     echo -e "${YELLOW} = = > Metadata is preserved for us in sidecars and stripped from outputs by default.${NC}"
+    echo -e "${YELLOW} = = > Double Check Digits From Ext If You Want To Keep Front Of Long Filenames.${NC}"
     echo
     echo -e "${CYAN} = = > Archival Levels:${NC}"
     echo -e "${CYAN}     1) Light Shrink   (Higher Quality / Larger Files)${NC}"
@@ -1320,11 +1528,11 @@ run_archie() {
 
     echo -e "${CYAN} = = > Size Gate Tolerance:${NC}"
     echo -e "${CYAN}     0 = Strict (must be smaller)${NC}"
-    echo -e "${CYAN}     N = Allow up to N%% larger (container overhead forgiveness)${NC}"
-    echo -e "${YELLOW} = = > Current Default:${NC} ${GREEN}${ARCHIE_SIZE_TOLERANCE_PERCENT}%${NC}"
+    echo -e "${CYAN}     N = Allow up to ${GREEN}${ARCHIE_SIZE_TOLERANCE_PERCENT}%${NC}${CYAN} Larger (container overhead forgiveness)${NC}"
     echo
 
-    read -r -p " = = > Enter Tolerance Percent [0-5 recommended | Enter=default]: " tol_input
+    echo -e "${YELLOW} = = > Enter Tolerance Percent [0-5 recommended | Enter=default] (Default: ${GREEN}${ARCHIE_SIZE_TOLERANCE_PERCENT}%${YELLOW}): ${NC}"
+	read -r tol_input
     tol_input="${tol_input//[[:space:]]/}"
 
     if [[ -n "$tol_input" && "$tol_input" =~ ^[0-9]+$ ]]; then
@@ -1336,12 +1544,82 @@ run_archie() {
 
     archie_twist_configure
 
+    # ========================================================
+    # #MARKER: FILENAME SHORTENING RUN CONFIG
+    # ========================================================
+    # PURPOSE:
+    # - Let user disable or tune smart shortening for this run
+    # - Keep long normal filenames intact when desired
+    #
+    # DESIGN:
+    # - Explicit on/off toggle
+    # - Adjustable prefix keep length
+    # - Adjustable tail keep length
+    #
+    # NOTES:
+    # - Setting very large keep values can make shortening effectively
+    #   disappear for ordinary names
+    # - But explicit disable is the cleanest / most obvious control
+    # ========================================================
+    echo -e "${CYAN} = = > Smart Filename Shortening:${NC}"
+    echo -e "${CYAN}     1) Enabled  = Preserve Meaningful Prefix + Tail${NC}"
+    echo -e "${CYAN}     2) Disabled = Keep Full Filename Stem${NC}"
+    echo
+
+	echo -e "${YELLOW} = = > Select [1-2 | Enter=enabled] (Default: enabled): ${NC}"
+	read -r shorten_mode
+    shorten_mode="${shorten_mode//[[:space:]]/}"
+
+    case "${shorten_mode:-1}" in
+        2)
+            ARCHIE_NAME_SHORTEN_ENABLE=0
+            ;;
+        *)
+            ARCHIE_NAME_SHORTEN_ENABLE=1
+            ;;
+    esac
+
+    if (( ARCHIE_NAME_SHORTEN_ENABLE == 1 )); then
+        echo
+        echo -e "${CYAN} = = > Prefix Characters To Preserve When Meaningful:${NC}"
+        echo -e "${CYAN}     Current Default:${NC} ${GREEN}${ARCHIE_NAME_SHORTEN_KEEP_PREFIX}${NC}"
+        echo
+		echo -e "${YELLOW} = = > Enter Prefix Keep Length [0-8 recommended | Enter=default]: ${NC}"
+		read -r prefix_keep_input
+        prefix_keep_input="${prefix_keep_input//[[:space:]]/}"
+
+        if [[ -n "$prefix_keep_input" && "$prefix_keep_input" =~ ^[0-9]+$ ]]; then
+            ARCHIE_NAME_SHORTEN_KEEP_PREFIX="$prefix_keep_input"
+        fi
+
+        echo
+        echo -e "${CYAN} = = > Tail Characters To Preserve:${NC}"
+        echo -e "${CYAN}     Current Default:${NC} ${GREEN}${ARCHIE_NAME_SHORTEN_KEEP_TAIL}${NC}"
+        echo -e "${CYAN}     Large Values Can Make Shortening Effectively Disappear${NC}"
+        echo
+		echo -e "${YELLOW} = = > Enter Tail Keep Length [12 recommended | 99=nearly off for many names | Enter=default]: ${NC}"
+		read -r tail_keep_input
+        tail_keep_input="${tail_keep_input//[[:space:]]/}"
+
+        if [[ -n "$tail_keep_input" && "$tail_keep_input" =~ ^[0-9]+$ ]]; then
+            ARCHIE_NAME_SHORTEN_KEEP_TAIL="$tail_keep_input"
+        fi
+    fi
+
     prefix="$(archie_get_prefix_for_level "$level")"
 
     echo
     echo -e "${CYAN} = = > Selected Prefix:${NC} ${GREEN}$prefix${NC}"
     echo -e "${CYAN} = = > Selected Audio Policy:${NC} ${GREEN}$audio_mode${NC}"
     echo -e "${CYAN} = = > Selected Metadata Policy:${NC} ${GREEN}$metadata_mode${NC}"
+
+    if (( ARCHIE_NAME_SHORTEN_ENABLE == 1 )); then
+        echo -e "${CYAN} = = > Filename Shortening:${NC} ${GREEN}enabled${NC}"
+        echo -e "${CYAN} = = > Meaningful Prefix Keep:${NC} ${YELLOW}${ARCHIE_NAME_SHORTEN_KEEP_PREFIX}${NC}"
+        echo -e "${CYAN} = = > Tail Keep:${NC} ${YELLOW}${ARCHIE_NAME_SHORTEN_KEEP_TAIL}${NC}"
+    else
+        echo -e "${CYAN} = = > Filename Shortening:${NC} ${YELLOW}disabled${NC}"
+    fi
     echo
 
     if ! ask_yes_no " = = > Proceed With Archival Re-Encode Pass? (y/n or 1/2): "; then
@@ -1436,7 +1714,6 @@ run_archie() {
                 echo -e "${CYAN} = = > Elapsed This File:${NC} ${YELLOW}$(archie_format_seconds_hms "$ARCHIE_PROGRESS_LAST_ELAPSED")${NC}"
                 archie_show_log_tail "$log_file" 40 || true
                 ((fail_count+=1)) || :
-                echo
                 continue
             fi
 
@@ -1453,7 +1730,7 @@ run_archie() {
             else
                 delta_percent="$(archie_percent_change "$orig_size" "$new_size")"
                 echo -e "${GR} = = > Created:${NC} ${CYAN}$out${NC}"
-                echo -e "${GREEN} = = > Size Reduced From:${NC} ${YELLOW}$orig_size${NC} ${GREEN}to${NC} ${YELLOW}$new_size${NC} bytes"
+				echo -e "${CYAN} = = > Size Reduced From:${NC} ${YELLOW}$(archie_bytes_to_human "$orig_size")${NC} ${CYAN}to${NC} ${YELLOW}$(archie_bytes_to_human "$new_size")${NC}"
                 echo -e "${CYAN} = = > Percent Change:${NC} ${YELLOW}${delta_percent}%${NC}"
                 echo -e "${CYAN} = = > Elapsed This File:${NC} ${YELLOW}$(archie_format_seconds_hms "$ARCHIE_PROGRESS_LAST_ELAPSED")${NC}"
                 outputs+=("$out")
@@ -1529,26 +1806,23 @@ run_archie() {
     batch_saved_bytes=$(( batch_source_total_bytes - batch_kept_total_bytes ))
     batch_delta_percent="$(archie_percent_change "$batch_source_total_bytes" "$batch_kept_total_bytes")"
 
-    echo -e "${CYAN} = = > Source Batch Total:${NC} ${YELLOW}$(archie_bytes_to_human "$batch_source_total_bytes")${NC} ${CYAN}(${batch_source_total_bytes} bytes)${NC}"
-    echo -e "${CYAN} = = > Kept Archive Total:${NC} ${YELLOW}$(archie_bytes_to_human "$batch_kept_total_bytes")${NC} ${CYAN}(${batch_kept_total_bytes} bytes)${NC}"
+	echo -e "${CYAN} = = > Source Batch Total:${NC} ${YELLOW}$(archie_bytes_to_human "$batch_source_total_bytes")${NC}"
+	echo -e "${CYAN} = = > Kept Archive Total:${NC} ${YELLOW}$(archie_bytes_to_human "$batch_kept_total_bytes")${NC}"
 
-    if (( batch_saved_bytes >= 0 )); then
-        echo -e "${GR} = = > Net Space Saved:${NC} ${YELLOW}$(archie_bytes_to_human "$batch_saved_bytes")${NC} ${CYAN}(${batch_saved_bytes} bytes)${NC}"
-    else
-        echo -e "${YE} = = > Net Space Delta:${NC} ${YELLOW}$(archie_bytes_to_human "$(( -batch_saved_bytes ))")${NC} ${CYAN}($batch_saved_bytes bytes)${NC}"
-    fi
+	if (( batch_saved_bytes >= 0 )); then
+	    echo -e "${GR} = = > Net Space Saved:${NC} ${YELLOW}$(archie_bytes_to_human "$batch_saved_bytes")${NC}"
+	else
+	    echo -e "${YE} = = > Net Space Delta:${NC} ${YELLOW}$(archie_bytes_to_human "$(( -batch_saved_bytes ))")${NC}"
+	fi
 
     echo -e "${CYAN} = = > Batch Percent Change:${NC} ${YELLOW}${batch_delta_percent}%${NC}"
-    echo -e "${REB} = = > Failed Outputs:${NC} ${YELLOW}$fail_count${NC}"
+    echo -e "${RE} = = > Failed Outputs:${NC} ${YELLOW}$fail_count${NC}"
     echo -e "${CYAN} = = > Archival Ledger:${NC} ${GREEN}$ARCHIE_LEDGER${NC}"
 
     if [[ "$metadata_mode" != "minimal_skip" ]]; then
         echo -e "${CYAN} = = > Metadata Sidecar Folder:${NC} ${GREEN}$ARCHIE_META_DIR${NC}"
     fi
-    echo
-
-    if ((${#outputs[@]} > 0)); then
-        archie_print_targets "New Archival Outputs" "${outputs[@]}"
+    if ((${#outputs[@]} > 0)); then archie_print_targets "New Archival Outputs" "${outputs[@]}"
     else
         echo -e "${YELLOW} = = > No New Archival Outputs Survived The Size-Gain Filter.${NC}"
         echo

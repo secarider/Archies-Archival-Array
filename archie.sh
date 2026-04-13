@@ -53,7 +53,7 @@ BW=$'\033[1;37m'
 # ------------------ DEFAULTS ------------------
 ARCHIE_VERSION="2.1"
 ARCHIE_DEFAULT_LEVEL=2
-ARCHIE_DEFAULT_AUDIO_MODE="aac"
+ARCHIE_DEFAULT_AUDIO_MODE="copy"
 ARCHIE_DEFAULT_AAC_BITRATE="128k"
 ARCHIE_DEFAULT_METADATA_MODE="sidecar_strip"
 ARCHIE_SEQUENCE_PAD=4
@@ -372,7 +372,7 @@ archie_show_easter_egg() {
     if [[ -f "$ARCHIE_EGG_FILE" ]]; then
         echo -e "${CYAN} = = > Displaying Custom ASCII:${NC} ${YELLOW}$ARCHIE_EGG_FILE${NC}"
         echo
-        archie_play_ascii_scroll "$ARCHIE_EGG_FILE" 2 0.015 0.30
+        archie_play_ascii_scroll "$ARCHIE_EGG_FILE" 6 0.45 0.35
 
     else
         # ------------------------------------------------
@@ -494,32 +494,94 @@ archie_play_builtin_cat_scroll() {
 # - Create A Retro "Screen Reveal" / "Scrolling In" Effect
 # - Short Burst Only, Then Return To ARCHIE
 # =========================
+# =========================
+# #MARKER: ASCII SCENE PACK PLAYER
+# =========================
+# PURPOSE:
+# - Play a lightweight ARCHIE scene pack instead of one giant ASCII blob
+# - Keep scenes short, readable, and funny during long runs
+# - Support user-custom external scene file with simple separators
+#
+# EXTERNAL FILE FORMAT:
+# - Put one or more scenes in ARCHIE_ASCII.txt
+# - Separate scenes with a line exactly like:
+#       ===SCENE===
+#
+# DESIGN:
+# - If no separator exists, whole file becomes one scene
+# - Scenes are shown one-at-a-time
+# - Scene order can be sequential or random
+# - We redraw one full scene, pause briefly, then move to next
+#
+# WHY THIS IS BETTER:
+# - Easier to author than giant scroll-art blobs
+# - More readable at terminal speed
+# - Lets ARCHIE feel animated without needing huge art
+# =========================
 archie_play_ascii_scroll() {
     local art_file="$1"
-    local passes="${2:-2}"
-    local line_delay="${3:-0.02}"
+    local passes="${2:-4}"
+    local frame_delay="${3:-0.45}"
     local hold_delay="${4:-0.35}"
-    local pass
+
+    local scene_separator="===SCENE==="
+    local current_scene=""
+    local -a scenes=()
+    local line
+    local total_scenes
+    local pass idx scene_index
 
     [[ -f "$art_file" ]] || return 1
 
-    for (( pass=1; pass<=passes; pass++ )); do
-        printf "\033[2J\033[H"
+    # ----------------------------------------------------
+    # LOAD SCENES FROM EXTERNAL FILE
+    # ----------------------------------------------------
+    # RULE:
+    # - Exact separator line starts a new scene
+    # - If no separator exists, entire file becomes one scene
+    # ----------------------------------------------------
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$line" == "$scene_separator" ]]; then
+            if [[ -n "$current_scene" ]]; then
+                scenes+=("$current_scene")
+                current_scene=""
+            fi
+            continue
+        fi
 
+        current_scene+="$line"$'\n'
+    done < "$art_file"
+
+    if [[ -n "$current_scene" ]]; then
+        scenes+=("$current_scene")
+    fi
+
+    total_scenes="${#scenes[@]}"
+    (( total_scenes > 0 )) || return 1
+
+    # ----------------------------------------------------
+    # PLAY SCENES
+    # ----------------------------------------------------
+    # DEFAULT:
+    # - Sequential playback for predictability
+    # - Easy to change to random later if desired
+    # ----------------------------------------------------
+    for (( pass=0; pass<passes; pass++ )); do
+        scene_index=$(( pass % total_scenes ))
+
+        printf "\033[2J\033[H"
         echo -e "${MAGENTA}================================================${NC}"
         echo -e "${MAGENTA}              ARCHIE INTERMISSION               ${NC}"
         echo -e "${MAGENTA}================================================${NC}"
         echo
 
-        while IFS= read -r line || [[ -n "$line" ]]; do
-            printf '%s\n' "$line"
-            sleep "$line_delay"
-        done < "$art_file"
-
+        printf '%s' "${scenes[$scene_index]}"
         echo
-        sleep "$hold_delay"
+
+        sleep "$frame_delay"
     done
 
+    sleep "$hold_delay"
     return 0
 }
 
@@ -1065,7 +1127,7 @@ archie_limit_targets_interactive() {
     echo -e "${CYAN}     0.) Return / Cancel${NC}"
     echo
 
-    echo -e "${YELLOW} = = > Select option [1-2 | 0.=cancel] (Default: Full Batch): ${NC}"
+    echo -ne "${YELLOW} = = > Select option [1-2 | 0.=cancel] (Default: Full Batch): ${NC}"
     read -r mode
     mode="${mode//[[:space:]]/}"
 
@@ -1080,7 +1142,7 @@ archie_limit_targets_interactive() {
             return 0
             ;;
         2)
-            echo -e "${YELLOW} = = > Enter How Many Files To Process:${NC}"
+            echo -ne "${YELLOW} = = > Enter How Many Files To Process:${NC}"
             read -r how_many
             how_many="${how_many//[[:space:]]/}"
 
@@ -1223,7 +1285,6 @@ archie_get_prefix_for_level() {
 
 archie_pick_audio_mode() {
     local mode
-    archie_play_builtin_cat_scroll
     clear
     echo -e "${CYAN}================================================${NC}"
     echo -e "${CYAN}              ARCHIE AUDIO POLICY               ${NC}"
@@ -1236,7 +1297,7 @@ archie_pick_audio_mode() {
     echo
     echo -e "${CYAN} = = > 1) Keep Audio 2) Audio to AAC 3) Remove Audio Entirely ${NC}"
     echo
-    echo -e "${YELLOW} = = > Choose Audio Mode [1-3 | 0.=cancel | q] (Default: ${GREEN}${ARCHIE_DEFAULT_AUDIO_MODE}${YELLOW}): ${NC}"
+    echo -ne "${YELLOW} = = > Choose Audio Mode [1-3 | 0.=cancel | q] (Default: ${GREEN}${ARCHIE_DEFAULT_AUDIO_MODE}${YELLOW}): ${NC}"
     read -r mode
     mode="${mode//[[:space:]]/}"
 
@@ -1256,7 +1317,6 @@ archie_pick_audio_mode() {
 
 archie_pick_metadata_mode() {
     local mode
-    archie_play_builtin_cat_scroll
     clear
     echo -e "${CYAN}================================================${NC}"
     echo -e "${CYAN}            ARCHIE METADATA POLICY              ${NC}"
@@ -1269,7 +1329,7 @@ archie_pick_metadata_mode() {
     echo
     echo -e "${CYAN} = = > 1) Sidecar_Strip 2) Restore_Common 3) Minimal_Skip ${NC}"
     echo
-    echo -e "${YELLOW} = = > Choose Metadata Mode [1-3 | 0.=cancel | q] (Default: ${GREEN}${ARCHIE_DEFAULT_METADATA_MODE}${YELLOW}): ${NC}"
+    echo -ne "${YELLOW} = = > Choose Metadata Mode [1-3 | 0.=cancel | q] (Default: ${GREEN}${ARCHIE_DEFAULT_METADATA_MODE}${YELLOW}): ${NC}"
     read -r mode
     mode="${mode//[[:space:]]/}"
 
@@ -1308,8 +1368,6 @@ archie_pick_metadata_mode() {
 # ========================================================
 archie_pick_cut_friendly_mode() {
     local mode
-
-    archie_play_builtin_cat_scroll
     clear
     echo -e "${CYAN}================================================${NC}"
     echo -e "${CYAN}        ARCHIE CUT-FRIENDLY / PRE-FACTORY       ${NC}"
@@ -1324,7 +1382,7 @@ archie_pick_cut_friendly_mode() {
     echo -e "${CYAN}     - It may help FACTORY skip unnecessary REKEY work${NC}"
     echo -e "${CYAN}     - It may also make outputs a bit less compression-efficient${NC}"
     echo
-    echo -e "${YELLOW} = = > Choose Cut-Friendly Mode [1-2 | 0.=cancel | q] (Default: ${GREEN}${ARCHIE_DEFAULT_CUT_FRIENDLY_MODE}${YELLOW}): ${NC}"
+    echo -ne "${YELLOW} = = > Choose Cut-Friendly Mode [1-2 | 0.=cancel | q] (Default: ${GREEN}${ARCHIE_DEFAULT_CUT_FRIENDLY_MODE}${YELLOW}): ${NC}"
     read -r mode
     mode="${mode//[[:space:]]/}"
 
@@ -1627,7 +1685,7 @@ run_archie() {
 
     archie_print_targets "Eligible Archival Targets" "${targets[@]}"
 
-    echo -e "${YELLOW} = = > Select Archival Level [1/2/3/4] (Default: ${ARCHIE_DEFAULT_LEVEL}): ${NC}"
+    echo -ne "${YELLOW} = = > Select Archival Level [1/2/3/4] (Default: ${ARCHIE_DEFAULT_LEVEL}): ${NC}"
     read -r level
     level="${level:-$ARCHIE_DEFAULT_LEVEL}"
     level="${level//[[:space:]]/}"
@@ -1674,7 +1732,7 @@ run_archie() {
     echo -e "${CYAN}     N = Allow up to ${GREEN}${ARCHIE_SIZE_TOLERANCE_PERCENT}%${NC}${CYAN} Larger (container overhead forgiveness)${NC}"
     echo
 
-    echo -e "${YELLOW} = = > Enter Tolerance Percent [0-5 recommended | Enter=default] (Default: ${GREEN}${ARCHIE_SIZE_TOLERANCE_PERCENT}%${YELLOW}): ${NC}"
+    echo -ne "${YELLOW} = = > Enter Tolerance Percent [0-5 recommended | Enter=default] (Default: ${GREEN}${ARCHIE_SIZE_TOLERANCE_PERCENT}%${YELLOW}): ${NC}"
     read -r tol_input
     tol_input="${tol_input//[[:space:]]/}"
 
@@ -1692,7 +1750,7 @@ run_archie() {
     echo -e "${CYAN}     2) Disabled = Keep Full Filename Stem${NC}"
     echo
 
-    echo -e "${YELLOW} = = > Select [1-2 | Enter=enabled] (Default: enabled): ${NC}"
+    echo -ne "${YELLOW} = = > Select [1-2 | Enter=enabled] (Default: enabled): ${NC}"
     read -r shorten_mode
     shorten_mode="${shorten_mode//[[:space:]]/}"
 
@@ -1710,7 +1768,7 @@ run_archie() {
         echo -e "${CYAN} = = > Prefix Characters To Preserve When Meaningful:${NC}"
         echo -e "${CYAN}     Current Default:${NC} ${GREEN}${ARCHIE_NAME_SHORTEN_KEEP_PREFIX}${NC}"
         echo
-        echo -e "${YELLOW} = = > Enter Prefix Keep Length [0-8 recommended | Enter=default]: ${NC}"
+        echo -ne "${YELLOW} = = > Enter Prefix Keep Length [0-8 recommended | Enter=default]: ${NC}"
         read -r prefix_keep_input
         prefix_keep_input="${prefix_keep_input//[[:space:]]/}"
 
@@ -1723,7 +1781,7 @@ run_archie() {
         echo -e "${CYAN}     Current Default:${NC} ${GREEN}${ARCHIE_NAME_SHORTEN_KEEP_TAIL}${NC}"
         echo -e "${CYAN}     Large Values Can Make Shortening Effectively Disappear${NC}"
         echo
-        echo -e "${YELLOW} = = > Enter Tail Keep Length [12 recommended | 99=nearly off for many names | Enter=default]: ${NC}"
+        echo -ne "${YELLOW} = = > Enter Tail Keep Length [12 recommended | 99=nearly off for many names | Enter=default]: ${NC}"
         read -r tail_keep_input
         tail_keep_input="${tail_keep_input//[[:space:]]/}"
 

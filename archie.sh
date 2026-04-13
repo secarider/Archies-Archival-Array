@@ -89,8 +89,29 @@ ARCHIE_NAME_SHORTEN_KEEP_TAIL=12
 ARCHIE_META_DIR="ARCHIE_META"
 ARCHIE_LEDGER="ARCHIE_LEDGER.csv"
 
+# ========================================================
+# #MARKER: CUT-FRIENDLY / PRE-FACTORY DEFAULTS
+# ========================================================
+# PURPOSE:
+# - Allow ARCHIE to optionally produce more cut-friendly outputs
+# - Help FACTORY keyframe suitability checks pass on first inspection
+# - Avoid unnecessary follow-up REKEY work when ARCHIE already did
+#   the heavy re-encode job
+#
+# IMPORTANT:
+# - This mode is INDEPENDENT from L1 / L2 / L3 / L4
+# - Levels still control squeeze / quality balance
+# - This toggle only controls GOP / keyframe targeting behavior
+#
+# DESIGN RULE:
+# - OFF by default so normal ARCHIE archival work keeps its current
+#   shrink-first behavior unless user explicitly asks otherwise
+# ========================================================
+ARCHIE_DEFAULT_CUT_FRIENDLY_MODE="off"
+
 ARCHIE_SELECTED_AUDIO_MODE=""
 ARCHIE_SELECTED_METADATA_MODE=""
+ARCHIE_SELECTED_CUT_FRIENDLY_MODE=""
 # ------------------ DEFAULTS ------------------
 # ------------------ PROGRESS / ETA TRACKING ------------------
 # ========================================================
@@ -286,7 +307,8 @@ archie_twist_configure() {
     echo -e "${YELLOW} = = > Default:${NC} ${GREEN}${ARCHIE_TWIST_EVERY_N_FILES}${NC}"
     echo
 
-    read -r -p " = = > Enter N: " n_input
+    echo -ne "${YELLOW} = = > Enter N: ${NC}"
+    read -r n_input
     n_input="${n_input//[[:space:]]/}"
 
     if [[ "$n_input" =~ ^[0-9]+$ ]]; then
@@ -511,9 +533,9 @@ pause() {
     read -r _
 }
 
-is_archie_exit_token() {
+is_exit_token() {
     local v="${1:-}"
-    [[ "$v" == "0." || "$v" == "q" || "$v" == "Q" ]]
+    [[ "$v" == "0" || "$v" == "0." || "$v" == "q" || "$v" == "Q" ]]
 }
 
 ask_yes_no() {
@@ -543,7 +565,7 @@ have_cmd() {
     command -v "$1" >/dev/null 2>&1
 }
 
-archie_format_seconds_hms() {
+format_seconds_hms() {
     local total="${1:-0}"
     local h m s
 
@@ -562,7 +584,7 @@ archie_format_seconds_hms() {
     fi
 }
 
-archie_trim_name() {
+trim_name() {
     local name="$1"
     local max_len="${2:-32}"
 
@@ -751,8 +773,8 @@ run_with_progress() {
             fi
 
             eta_seconds=$(( avg_seconds * remaining_files ))
-            avg_human="$(archie_format_seconds_hms "$avg_seconds")"
-            eta_human="$(archie_format_seconds_hms "$eta_seconds")"
+            avg_human="$(format_seconds_hms "$avg_seconds")"
+            eta_human="$(format_seconds_hms "$eta_seconds")"
 
             progress_note="  ${CYAN}file ${ARCHIE_PROGRESS_CURRENT_INDEX}/${ARCHIE_PROGRESS_TOTAL_FILES}${NC}${YELLOW}  avg ${avg_human}  approx eta ${eta_human}${NC}"
         elif (( ARCHIE_PROGRESS_DONE_COUNT > 0 && ARCHIE_PROGRESS_TOTAL_FILES > 0 )); then
@@ -917,7 +939,7 @@ get_folder_size_human() {
     fi
 }
 
-archie_bytes_to_human() {
+bytes_to_human() {
     local bytes="${1:-0}"
 
     awk -v b="$bytes" 'BEGIN {
@@ -936,7 +958,7 @@ archie_bytes_to_human() {
     }'
 }
 
-archie_sum_file_sizes() {
+sum_file_sizes() {
     local total=0
     local f size
 
@@ -1043,11 +1065,11 @@ archie_limit_targets_interactive() {
     echo -e "${CYAN}     0.) Return / Cancel${NC}"
     echo
 
-	echo -e "${YELLOW} = = > Select option [1-2 | 0.=cancel] (Default: Full Batch): ${NC}"
-	read -r mode
-	mode="${mode//[[:space:]]/}"
+    echo -e "${YELLOW} = = > Select option [1-2 | 0.=cancel] (Default: Full Batch): ${NC}"
+    read -r mode
+    mode="${mode//[[:space:]]/}"
 
-    if is_archie_exit_token "$mode" || [[ "$mode" == "0" ]]; then
+    if is_exit_token "$mode" || [[ "$mode" == "0" ]]; then
         return 1
     fi
 
@@ -1062,7 +1084,7 @@ archie_limit_targets_interactive() {
             read -r how_many
             how_many="${how_many//[[:space:]]/}"
 
-            if is_archie_exit_token "$how_many" || [[ "$how_many" == "0" ]]; then
+            if is_exit_token "$how_many" || [[ "$how_many" == "0" ]]; then
                 return 1
             fi
 
@@ -1099,7 +1121,7 @@ archie_ensure_ledger() {
     fi
 }
 
-archie_safe_stem() {
+safe_stem() {
     local name="$1"
     name="${name##*/}"
     name="${name%.*}"
@@ -1113,7 +1135,7 @@ archie_capture_metadata_sidecar() {
     local stem meta_json meta_txt sha_file
 
     archie_ensure_meta_dir
-    stem="$(archie_safe_stem "$src")"
+    stem="$(safe_stem "$src")"
 
     meta_json="$ARCHIE_META_DIR/${stem}.ffprobe.json"
     meta_txt="$ARCHIE_META_DIR/${stem}.stat.txt"
@@ -1136,7 +1158,7 @@ archie_capture_metadata_sidecar() {
     printf '%s\n' "$meta_json"
 }
 
-archie_percent_change() {
+percent_change() {
     local orig_size="$1"
     local new_size="$2"
 
@@ -1173,7 +1195,7 @@ archie_append_ledger_row() {
         >> "$ARCHIE_LEDGER"
 }
 
-archie_size_gate_passes() {
+size_gate_passes() {
     local orig_size="$1"
     local new_size="$2"
     local tolerance_percent="${3:-$ARCHIE_SIZE_TOLERANCE_PERCENT}"
@@ -1201,7 +1223,7 @@ archie_get_prefix_for_level() {
 
 archie_pick_audio_mode() {
     local mode
-archie_play_builtin_cat_scroll
+    archie_play_builtin_cat_scroll
     clear
     echo -e "${CYAN}================================================${NC}"
     echo -e "${CYAN}              ARCHIE AUDIO POLICY               ${NC}"
@@ -1214,11 +1236,11 @@ archie_play_builtin_cat_scroll
     echo
     echo -e "${CYAN} = = > 1) Keep Audio 2) Audio to AAC 3) Remove Audio Entirely ${NC}"
     echo
-	echo -e "${YELLOW} = = > Choose Audio Mode [1-3 | 0.=cancel | q] (Default: ${GREEN}${ARCHIE_DEFAULT_AUDIO_MODE}${YELLOW}): ${NC}"
-	read -r mode
-	mode="${mode//[[:space:]]/}"
+    echo -e "${YELLOW} = = > Choose Audio Mode [1-3 | 0.=cancel | q] (Default: ${GREEN}${ARCHIE_DEFAULT_AUDIO_MODE}${YELLOW}): ${NC}"
+    read -r mode
+    mode="${mode//[[:space:]]/}"
 
-    if is_archie_exit_token "$mode"; then
+    if is_exit_token "$mode"; then
         return 1
     fi
 
@@ -1234,7 +1256,7 @@ archie_play_builtin_cat_scroll
 
 archie_pick_metadata_mode() {
     local mode
-archie_play_builtin_cat_scroll
+    archie_play_builtin_cat_scroll
     clear
     echo -e "${CYAN}================================================${NC}"
     echo -e "${CYAN}            ARCHIE METADATA POLICY              ${NC}"
@@ -1247,11 +1269,11 @@ archie_play_builtin_cat_scroll
     echo
     echo -e "${CYAN} = = > 1) Sidecar_Strip 2) Restore_Common 3) Minimal_Skip ${NC}"
     echo
-	echo -e "${YELLOW} = = > Choose Metadata Mode [1-3 | 0.=cancel | q] (Default: ${GREEN}${ARCHIE_DEFAULT_METADATA_MODE}${YELLOW}): ${NC}"
-	read -r mode
-	mode="${mode//[[:space:]]/}"
+    echo -e "${YELLOW} = = > Choose Metadata Mode [1-3 | 0.=cancel | q] (Default: ${GREEN}${ARCHIE_DEFAULT_METADATA_MODE}${YELLOW}): ${NC}"
+    read -r mode
+    mode="${mode//[[:space:]]/}"
 
-    if is_archie_exit_token "$mode"; then
+    if is_exit_token "$mode"; then
         return 1
     fi
 
@@ -1265,16 +1287,79 @@ archie_play_builtin_cat_scroll
     return 0
 }
 
+# ========================================================
+# #MARKER: CUT-FRIENDLY / PRE-FACTORY PICKER
+# ========================================================
+# PURPOSE:
+# - Let user decide whether this ARCHIE run should also target
+#   factory-friendlier keyframe spacing
+#
+# IMPORTANT:
+# - This does NOT replace L1 / L2 / L3 / L4
+# - It layers ON TOP of the selected archival level
+# - So every level remains available in either mode:
+#     normal
+#     cut-friendly
+#
+# WHY THIS EXISTS:
+# - Standard ARCHIE archival work focuses on shrink efficiency
+# - FACTORY-prep work benefits from tighter / more predictable GOPs
+# - Keeping this as a separate toggle avoids muddying level meaning
+# ========================================================
+archie_pick_cut_friendly_mode() {
+    local mode
+
+    archie_play_builtin_cat_scroll
+    clear
+    echo -e "${CYAN}================================================${NC}"
+    echo -e "${CYAN}        ARCHIE CUT-FRIENDLY / PRE-FACTORY       ${NC}"
+    echo -e "${CYAN}================================================${NC}"
+    echo
+    echo -e "${CYAN} = = > Encode Modes:${NC}"
+    echo -e "${CYAN}     1) Off = Standard ARCHIE archival behavior${NC}"
+    echo -e "${CYAN}     2) On  = Target ~1-second keyframe spacing${NC}"
+    echo
+    echo -e "${CYAN} = = > NOTES:${NC}"
+    echo -e "${CYAN}     - This mode is independent of L1 / L2 / L3 / L4${NC}"
+    echo -e "${CYAN}     - It may help FACTORY skip unnecessary REKEY work${NC}"
+    echo -e "${CYAN}     - It may also make outputs a bit less compression-efficient${NC}"
+    echo
+    echo -e "${YELLOW} = = > Choose Cut-Friendly Mode [1-2 | 0.=cancel | q] (Default: ${GREEN}${ARCHIE_DEFAULT_CUT_FRIENDLY_MODE}${YELLOW}): ${NC}"
+    read -r mode
+    mode="${mode//[[:space:]]/}"
+
+    if is_exit_token "$mode"; then
+        return 1
+    fi
+
+    case "$mode" in
+        2)
+            ARCHIE_SELECTED_CUT_FRIENDLY_MODE="on"
+            ;;
+        1|"")
+            ARCHIE_SELECTED_CUT_FRIENDLY_MODE="off"
+            ;;
+        *)
+            ARCHIE_SELECTED_CUT_FRIENDLY_MODE="$ARCHIE_DEFAULT_CUT_FRIENDLY_MODE"
+            ;;
+    esac
+
+    return 0
+}
+
 archie_encode_one_file() {
     local level="$1"
     local audio_mode="$2"
     local metadata_mode="$3"
-    local in="$4"
-    local out="$5"
-    local log_file="$6"
+    local cut_friendly_mode="$4"
+    local in="$5"
+    local out="$6"
+    local log_file="$7"
 
     local v_preset v_crf audio_bitrate
+    local fps_raw fps_int
     local -a meta_args=()
+    local -a gop_args=()
 
     case "$level" in
         1)
@@ -1317,11 +1402,69 @@ archie_encode_one_file() {
             ;;
     esac
 
+    # ----------------------------------------------------
+    # OPTIONAL CUT-FRIENDLY GOP / KEYFRAME TARGETING
+    # ----------------------------------------------------
+    # PURPOSE:
+    # - Try to produce ~1-second keyframe spacing so downstream
+    #   cut operations are more likely to be friendly first try
+    #
+    # DESIGN:
+    # - We derive GOP target from source fps when possible
+    # - We clamp to sane integer values for x264 / ffmpeg args
+    # - Scene-cut remains allowed, but max GOP is kept tight
+    #
+    # IMPORTANT:
+    # - This mode does NOT guarantee FACTORY will always skip REKEY
+    # - FACTORY should still judge suitability normally
+    # ----------------------------------------------------
+    if [[ "$cut_friendly_mode" == "on" ]]; then
+        fps_raw="$(ffprobe -v error \
+            -select_streams v:0 \
+            -show_entries stream=avg_frame_rate \
+            -of default=noprint_wrappers=1:nokey=1 \
+            "$in" 2>/dev/null || true)"
+
+        fps_int="$(awk -v r="$fps_raw" 'BEGIN {
+            n=split(r, a, "/")
+            if (n == 2 && a[2] > 0) {
+                fps=a[1]/a[2]
+            } else if (r ~ /^[0-9]+([.][0-9]+)?$/) {
+                fps=r+0
+            } else {
+                fps=0
+            }
+
+            if (fps < 1) {
+                print 24
+                exit
+            }
+
+            g=int(fps + 0.5)
+
+            if (g < 1)   g=1
+            if (g > 240) g=240
+
+            print g
+        }')"
+
+        gop_args=(
+            -g "$fps_int"
+            -keyint_min "$fps_int"
+            -sc_threshold 40
+            -x264-params "open-gop=0:min-keyint=${fps_int}:keyint=${fps_int}"
+        )
+    fi
+
     {
         echo "ARCHIE_DEBUG|entered_encode_helper=1"
         echo "ARCHIE_DEBUG|input=$in"
         echo "ARCHIE_DEBUG|output=$out"
-        echo "ARCHIE_DEBUG|level=$level|audio_mode=$audio_mode|metadata_mode=$metadata_mode"
+        echo "ARCHIE_DEBUG|level=$level|audio_mode=$audio_mode|metadata_mode=$metadata_mode|cut_friendly_mode=$cut_friendly_mode"
+        if [[ "$cut_friendly_mode" == "on" ]]; then
+            echo "ARCHIE_DEBUG|gop_target_frames=$fps_int"
+            echo "ARCHIE_DEBUG|source_avg_frame_rate=${fps_raw:-unknown}"
+        fi
         echo "ARCHIE_DEBUG|utc=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     } >> "$log_file"
 
@@ -1332,6 +1475,7 @@ archie_encode_one_file() {
                 "${meta_args[@]}" \
                 -sn -dn \
                 -c:v libx264 -preset "$v_preset" -crf "$v_crf" \
+                "${gop_args[@]}" \
                 -an \
                 "$out" \
                 >> "$log_file" 2>&1
@@ -1342,6 +1486,7 @@ archie_encode_one_file() {
                 "${meta_args[@]}" \
                 -sn -dn \
                 -c:v libx264 -preset "$v_preset" -crf "$v_crf" \
+                "${gop_args[@]}" \
                 -c:a aac -b:a "$audio_bitrate" \
                 "$out" \
                 >> "$log_file" 2>&1
@@ -1352,6 +1497,7 @@ archie_encode_one_file() {
                 "${meta_args[@]}" \
                 -sn -dn \
                 -c:v libx264 -preset "$v_preset" -crf "$v_crf" \
+                "${gop_args[@]}" \
                 -c:a copy \
                 "$out" \
                 >> "$log_file" 2>&1
@@ -1414,7 +1560,7 @@ archie_show_danger_banner() {
 
 # ------------------ MAIN WORKFLOW ------------------
 run_archie() {
-    local level prefix tar_name audio_mode metadata_mode
+    local level prefix tar_name audio_mode metadata_mode cut_friendly_mode
     local metadata_sidecar delta_percent batch_delta_percent
     local orig_size new_size
     local batch_source_total_bytes=0
@@ -1468,17 +1614,7 @@ run_archie() {
     # ========================================================
     # BATCH SIZE BASELINE
     # ========================================================
-    # PURPOSE:
-    # - Measure The Total Size Of The Selected Source Batch
-    # - Give ARCHIE A Real After-The-Fact Savings Report
-    #
-    # IMPORTANT:
-    # - This is NOT a guess
-    # - This is the actual byte total of the selected source files
-    # - Even files later rejected / failed still count in the source batch,
-    #   because they were part of the run scope
-    # ========================================================
-    batch_source_total_bytes="$(archie_sum_file_sizes "${targets[@]}")"
+    batch_source_total_bytes="$(sum_file_sizes "${targets[@]}")"
 
     # ========================================================
     # RESET / ARM ROLLING ETA STATE FOR THIS RUN
@@ -1496,7 +1632,7 @@ run_archie() {
     level="${level:-$ARCHIE_DEFAULT_LEVEL}"
     level="${level//[[:space:]]/}"
 
-    if is_archie_exit_token "$level"; then
+    if is_exit_token "$level"; then
         return 0
     fi
 
@@ -1525,6 +1661,13 @@ run_archie() {
         return 0
     fi
     metadata_mode="$ARCHIE_SELECTED_METADATA_MODE"
+    if ! archie_pick_cut_friendly_mode; then
+        echo -e "${YELLOW} = = > Cut-Friendly / Pre-Factory Selection Cancelled.${NC}"
+        echo
+        pause
+        return 0
+    fi
+    cut_friendly_mode="$ARCHIE_SELECTED_CUT_FRIENDLY_MODE"
 
     echo -e "${CYAN} = = > Size Gate Tolerance:${NC}"
     echo -e "${CYAN}     0 = Strict (must be smaller)${NC}"
@@ -1532,7 +1675,7 @@ run_archie() {
     echo
 
     echo -e "${YELLOW} = = > Enter Tolerance Percent [0-5 recommended | Enter=default] (Default: ${GREEN}${ARCHIE_SIZE_TOLERANCE_PERCENT}%${YELLOW}): ${NC}"
-	read -r tol_input
+    read -r tol_input
     tol_input="${tol_input//[[:space:]]/}"
 
     if [[ -n "$tol_input" && "$tol_input" =~ ^[0-9]+$ ]]; then
@@ -1544,30 +1687,13 @@ run_archie() {
 
     archie_twist_configure
 
-    # ========================================================
-    # #MARKER: FILENAME SHORTENING RUN CONFIG
-    # ========================================================
-    # PURPOSE:
-    # - Let user disable or tune smart shortening for this run
-    # - Keep long normal filenames intact when desired
-    #
-    # DESIGN:
-    # - Explicit on/off toggle
-    # - Adjustable prefix keep length
-    # - Adjustable tail keep length
-    #
-    # NOTES:
-    # - Setting very large keep values can make shortening effectively
-    #   disappear for ordinary names
-    # - But explicit disable is the cleanest / most obvious control
-    # ========================================================
     echo -e "${CYAN} = = > Smart Filename Shortening:${NC}"
     echo -e "${CYAN}     1) Enabled  = Preserve Meaningful Prefix + Tail${NC}"
     echo -e "${CYAN}     2) Disabled = Keep Full Filename Stem${NC}"
     echo
 
-	echo -e "${YELLOW} = = > Select [1-2 | Enter=enabled] (Default: enabled): ${NC}"
-	read -r shorten_mode
+    echo -e "${YELLOW} = = > Select [1-2 | Enter=enabled] (Default: enabled): ${NC}"
+    read -r shorten_mode
     shorten_mode="${shorten_mode//[[:space:]]/}"
 
     case "${shorten_mode:-1}" in
@@ -1584,8 +1710,8 @@ run_archie() {
         echo -e "${CYAN} = = > Prefix Characters To Preserve When Meaningful:${NC}"
         echo -e "${CYAN}     Current Default:${NC} ${GREEN}${ARCHIE_NAME_SHORTEN_KEEP_PREFIX}${NC}"
         echo
-		echo -e "${YELLOW} = = > Enter Prefix Keep Length [0-8 recommended | Enter=default]: ${NC}"
-		read -r prefix_keep_input
+        echo -e "${YELLOW} = = > Enter Prefix Keep Length [0-8 recommended | Enter=default]: ${NC}"
+        read -r prefix_keep_input
         prefix_keep_input="${prefix_keep_input//[[:space:]]/}"
 
         if [[ -n "$prefix_keep_input" && "$prefix_keep_input" =~ ^[0-9]+$ ]]; then
@@ -1597,8 +1723,8 @@ run_archie() {
         echo -e "${CYAN}     Current Default:${NC} ${GREEN}${ARCHIE_NAME_SHORTEN_KEEP_TAIL}${NC}"
         echo -e "${CYAN}     Large Values Can Make Shortening Effectively Disappear${NC}"
         echo
-		echo -e "${YELLOW} = = > Enter Tail Keep Length [12 recommended | 99=nearly off for many names | Enter=default]: ${NC}"
-		read -r tail_keep_input
+        echo -e "${YELLOW} = = > Enter Tail Keep Length [12 recommended | 99=nearly off for many names | Enter=default]: ${NC}"
+        read -r tail_keep_input
         tail_keep_input="${tail_keep_input//[[:space:]]/}"
 
         if [[ -n "$tail_keep_input" && "$tail_keep_input" =~ ^[0-9]+$ ]]; then
@@ -1612,6 +1738,7 @@ run_archie() {
     echo -e "${CYAN} = = > Selected Prefix:${NC} ${GREEN}$prefix${NC}"
     echo -e "${CYAN} = = > Selected Audio Policy:${NC} ${GREEN}$audio_mode${NC}"
     echo -e "${CYAN} = = > Selected Metadata Policy:${NC} ${GREEN}$metadata_mode${NC}"
+    echo -e "${CYAN} = = > Selected Cut-Friendly Mode:${NC} ${GREEN}$cut_friendly_mode${NC}"
 
     if (( ARCHIE_NAME_SHORTEN_ENABLE == 1 )); then
         echo -e "${CYAN} = = > Filename Shortening:${NC} ${GREEN}enabled${NC}"
@@ -1636,30 +1763,7 @@ run_archie() {
     echo
 
     for f in "${targets[@]}"; do
-        # ========================================================
-        # RESUME-SAFE SKIP (EXISTING OUTPUT DETECTED)
-        # ========================================================
-        # PURPOSE:
-        # - If this source already has a completed archival output
-        #   for the current level/prefix, skip it
-        #
-        # BENEFIT:
-        # - Safe restart after interruption
-        # - No wasted CPU re-encoding completed work
-        #
-        # NOTE:
-        # - This is prefix-aware (L1 vs L2 vs L3 vs L4)
-        # - This does NOT depend on sequence numbering
-        # ========================================================
         if archie_existing_output_for_source "$prefix" "$f"; then
-            # ========================================================
-            # RESUME COHERENCE ACCOUNTING
-            # ========================================================
-            # PURPOSE:
-            # - Treat already-finished outputs as completed work
-            # - Keep ETA / Twisted-Lite cadence truthful on resumed runs
-            # - Keep batch-kept total size truthful on resumed runs
-            # ========================================================
             existing_out="$(archie_get_existing_output_for_source "$prefix" "$f" 2>/dev/null || true)"
 
             echo -e "${YE} = = > [SKIP EXISTING]${NC} ${GREEN}$f${NC}"
@@ -1671,11 +1775,9 @@ run_archie() {
                 echo -e "${CYAN} = = > Existing Output Size:${NC} ${YELLOW}$existing_size${NC} bytes"
             fi
 
-            # Count as completed work for run-level progress feel
             ((success_count+=1)) || :
             ARCHIE_PROGRESS_DONE_COUNT=$(( ARCHIE_PROGRESS_DONE_COUNT + 1 ))
 
-            # Keep Twisted-Lite file-boundary flipping truthful on resumed runs
             if (( ARCHIE_TWIST_ENABLE == 1 )); then
                 if (( ARCHIE_PROGRESS_DONE_COUNT > 0 )) && \
                    (( ARCHIE_PROGRESS_DONE_COUNT % ARCHIE_TWIST_EVERY_N_FILES == 0 )); then
@@ -1686,6 +1788,7 @@ run_archie() {
             echo
             continue
         fi
+
         ARCHIE_PROGRESS_CURRENT_INDEX=$(( success_count + fail_count + no_gain_count + 1 ))
         out="$(archie_make_output_name "$prefix" "$((success_count + fail_count + no_gain_count + 1))" "$f")"
 
@@ -1701,17 +1804,17 @@ run_archie() {
         fi
 
         archie_ensure_meta_dir
-        log_file="$ARCHIE_META_DIR/$(archie_safe_stem "$f").ffmpeg.log"
+        log_file="$ARCHIE_META_DIR/$(safe_stem "$f").ffmpeg.log"
         : > "$log_file"
 
         echo -e "${CYAN} = = > ffmpeg Log:${NC} ${GREEN}$log_file${NC}"
 
-        progress_label="Archival Array: $(archie_trim_name "$(basename "$f")")"
+        progress_label="Archival Array: $(trim_name "$(basename "$f")")"
 
-        if run_with_progress "$progress_label" archie_encode_one_file "$level" "$audio_mode" "$metadata_mode" "$f" "$out" "$log_file"; then
+        if run_with_progress "$progress_label" archie_encode_one_file "$level" "$audio_mode" "$metadata_mode" "$cut_friendly_mode" "$f" "$out" "$log_file"; then
             if [[ ! -f "$out" ]]; then
                 echo -e "${REB} = = > Encode Reported Success But No Output File Was Found:${NC} ${GREEN}$out${NC}"
-                echo -e "${CYAN} = = > Elapsed This File:${NC} ${YELLOW}$(archie_format_seconds_hms "$ARCHIE_PROGRESS_LAST_ELAPSED")${NC}"
+                echo -e "${CYAN} = = > Elapsed This File:${NC} ${YELLOW}$(format_seconds_hms "$ARCHIE_PROGRESS_LAST_ELAPSED")${NC}"
                 archie_show_log_tail "$log_file" 40 || true
                 ((fail_count+=1)) || :
                 continue
@@ -1720,19 +1823,19 @@ run_archie() {
             orig_size=$(stat -c%s "$f")
             new_size=$(stat -c%s "$out")
 
-           if ! archie_size_gate_passes "$orig_size" "$new_size" "$ARCHIE_SIZE_TOLERANCE_PERCENT"; then
+            if ! size_gate_passes "$orig_size" "$new_size" "$ARCHIE_SIZE_TOLERANCE_PERCENT"; then
                 echo -e "${YELLOW} = = > No Size Gain. Removing Archival Copy:${NC} ${CYAN}$out${NC}"
                 echo -e "${YELLOW} = = > Original Size:${NC} ${YELLOW}$orig_size${NC} bytes"
                 echo -e "${YELLOW} = = > New Size:${NC} ${YELLOW}$new_size${NC} bytes"
-                echo -e "${CYAN} = = > Elapsed This File:${NC} ${YELLOW}$(archie_format_seconds_hms "$ARCHIE_PROGRESS_LAST_ELAPSED")${NC}"
+                echo -e "${CYAN} = = > Elapsed This File:${NC} ${YELLOW}$(format_seconds_hms "$ARCHIE_PROGRESS_LAST_ELAPSED")${NC}"
                 rm -f -- "$out"
                 ((no_gain_count+=1)) || :
             else
-                delta_percent="$(archie_percent_change "$orig_size" "$new_size")"
+                delta_percent="$(percent_change "$orig_size" "$new_size")"
                 echo -e "${GR} = = > Created:${NC} ${CYAN}$out${NC}"
-				echo -e "${CYAN} = = > Size Reduced From:${NC} ${YELLOW}$(archie_bytes_to_human "$orig_size")${NC} ${CYAN}to${NC} ${YELLOW}$(archie_bytes_to_human "$new_size")${NC}"
+                echo -e "${CYAN} = = > Size Reduced From:${NC} ${YELLOW}$(bytes_to_human "$orig_size")${NC} ${CYAN}to${NC} ${YELLOW}$(bytes_to_human "$new_size")${NC}"
                 echo -e "${CYAN} = = > Percent Change:${NC} ${YELLOW}${delta_percent}%${NC}"
-                echo -e "${CYAN} = = > Elapsed This File:${NC} ${YELLOW}$(archie_format_seconds_hms "$ARCHIE_PROGRESS_LAST_ELAPSED")${NC}"
+                echo -e "${CYAN} = = > Elapsed This File:${NC} ${YELLOW}$(format_seconds_hms "$ARCHIE_PROGRESS_LAST_ELAPSED")${NC}"
                 outputs+=("$out")
                 source_output_pairs+=("$f|$out")
                 batch_kept_total_bytes=$(( batch_kept_total_bytes + new_size ))
@@ -1762,22 +1865,18 @@ run_archie() {
             fi
         else
             echo -e "${REB} = = > Failed:${NC} ${GREEN}$f${NC}"
-            echo -e "${CYAN} = = > Elapsed This File:${NC} ${YELLOW}$(archie_format_seconds_hms "$ARCHIE_PROGRESS_LAST_ELAPSED")${NC}"
+            echo -e "${CYAN} = = > Elapsed This File:${NC} ${YELLOW}$(format_seconds_hms "$ARCHIE_PROGRESS_LAST_ELAPSED")${NC}"
             archie_show_log_tail "$log_file" 40 || true
             ((fail_count+=1)) || :
         fi
-        # ========================================================
-        # TWISTED-LITE FILE-BOUNDARY PALETTE FLIP
-        # ========================================================
+
         if (( ARCHIE_TWIST_ENABLE == 1 )); then
             if (( ARCHIE_PROGRESS_DONE_COUNT > 0 )) && \
                (( ARCHIE_PROGRESS_DONE_COUNT % ARCHIE_TWIST_EVERY_N_FILES == 0 )); then
                 archie_twist_cycle
             fi
         fi
-        # ========================================================
-        # ARCHIE EASTER EGG INTERMISSION
-        # ========================================================
+
         archie_show_easter_egg
         echo
     done
@@ -1787,33 +1886,18 @@ run_archie() {
     echo -e "${CYAN}================================================${NC}"
     echo -e "${GREEN} = = > Successful Outputs Kept:${NC} ${YELLOW}$success_count${NC}"
     echo -e "${YELLOW} = = > No-Gain Outputs Removed:${NC} ${YELLOW}$no_gain_count${NC}"
-    # ========================================================
-    # BATCH SPACE-SAVINGS SUMMARY
-    # ========================================================
-    # PURPOSE:
-    # - Show What This ARCHIE Run Actually Accomplished In Space Terms
-    # - Use Real Byte Totals, Not Estimates
-    #
-    # DEFINITIONS:
-    # - Source Batch Total = total bytes of all selected input targets
-    # - Kept Archive Total = total bytes of surviving ARCHIVE_* outputs
-    # - Net Space Saved    = source batch total minus kept archive total
-    #
-    # NOTE:
-    # - If some files failed or were booted as no-gain, this still tells the
-    #   truth about the whole run scope versus what survived
-    # ========================================================
+
     batch_saved_bytes=$(( batch_source_total_bytes - batch_kept_total_bytes ))
-    batch_delta_percent="$(archie_percent_change "$batch_source_total_bytes" "$batch_kept_total_bytes")"
+    batch_delta_percent="$(percent_change "$batch_source_total_bytes" "$batch_kept_total_bytes")"
 
-	echo -e "${CYAN} = = > Source Batch Total:${NC} ${YELLOW}$(archie_bytes_to_human "$batch_source_total_bytes")${NC}"
-	echo -e "${CYAN} = = > Kept Archive Total:${NC} ${YELLOW}$(archie_bytes_to_human "$batch_kept_total_bytes")${NC}"
+    echo -e "${CYAN} = = > Source Batch Total:${NC} ${YELLOW}$(bytes_to_human "$batch_source_total_bytes")${NC}"
+    echo -e "${CYAN} = = > Kept Archive Total:${NC} ${YELLOW}$(bytes_to_human "$batch_kept_total_bytes")${NC}"
 
-	if (( batch_saved_bytes >= 0 )); then
-	    echo -e "${GR} = = > Net Space Saved:${NC} ${YELLOW}$(archie_bytes_to_human "$batch_saved_bytes")${NC}"
-	else
-	    echo -e "${YE} = = > Net Space Delta:${NC} ${YELLOW}$(archie_bytes_to_human "$(( -batch_saved_bytes ))")${NC}"
-	fi
+    if (( batch_saved_bytes >= 0 )); then
+        echo -e "${GR} = = > Net Space Saved:${NC} ${YELLOW}$(bytes_to_human "$batch_saved_bytes")${NC}"
+    else
+        echo -e "${YE} = = > Net Space Delta:${NC} ${YELLOW}$(bytes_to_human "$(( -batch_saved_bytes ))")${NC}"
+    fi
 
     echo -e "${CYAN} = = > Batch Percent Change:${NC} ${YELLOW}${batch_delta_percent}%${NC}"
     echo -e "${RE} = = > Failed Outputs:${NC} ${YELLOW}$fail_count${NC}"
@@ -1822,7 +1906,9 @@ run_archie() {
     if [[ "$metadata_mode" != "minimal_skip" ]]; then
         echo -e "${CYAN} = = > Metadata Sidecar Folder:${NC} ${GREEN}$ARCHIE_META_DIR${NC}"
     fi
-    if ((${#outputs[@]} > 0)); then archie_print_targets "New Archival Outputs" "${outputs[@]}"
+
+    if ((${#outputs[@]} > 0)); then
+        archie_print_targets "New Archival Outputs" "${outputs[@]}"
     else
         echo -e "${YELLOW} = = > No New Archival Outputs Survived The Size-Gain Filter.${NC}"
         echo
